@@ -1,0 +1,121 @@
+import tkinter as tk
+from tkinter import messagebox
+import datetime
+import sqlite3
+
+class BarcodeScannerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Barcode Scanner")
+        self.root.geometry("400x350")
+
+        self.create_database()
+
+        self.label = tk.Label(root, text="Scan a barcode:", font=("Arial", 14))
+        self.label.pack(pady=10)
+
+        self.entry = tk.Entry(root, font=("Arial", 14))
+        self.entry.pack(pady=5)
+        self.entry.bind("<Return>", self.scan_barcode)
+        self.entry.focus()
+
+        self.listbox = tk.Listbox(root, font=("Arial", 12), height=10)
+        self.listbox.pack(pady=10, fill=tk.BOTH, expand=True)
+
+        self.button_frame = tk.Frame(root)
+        self.button_frame.pack(pady=5)
+
+        self.save_button = tk.Button(self.button_frame, text="Save Entries", command=self.save_entries, font=("Arial", 12))
+        self.save_button.pack(side=tk.LEFT, padx=5)
+
+        self.clear_button = tk.Button(self.button_frame, text="Clear List", command=self.clear_list, font=("Arial", 12))
+        self.clear_button.pack(side=tk.LEFT, padx=5)
+
+        self.status_label = tk.Label(root, text="", font=("Arial", 10), fg="green")
+        self.status_label.pack()
+
+        self.load_previous_entries()
+
+    def create_database(self):
+        """Create a SQLite database and table if they don't exist."""
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS barcodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                barcode TEXT NOT NULL UNIQUE
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def scan_barcode(self, event):
+        """Capture barcode input and store it in the listbox."""
+        barcode = self.entry.get().strip()
+        if barcode:
+            if self.is_barcode_duplicate(barcode):
+                messagebox.showwarning("Duplicate Entry", "This barcode has already been scanned.")
+            else:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.listbox.insert(tk.END, f"{timestamp}: {barcode}")
+            self.entry.delete(0, tk.END)
+        else:
+            messagebox.showwarning("Input Error", "Please scan a valid barcode.")
+        self.entry.focus()
+
+    def is_barcode_duplicate(self, barcode):
+        """Check if barcode already exists in the database."""
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM barcodes WHERE barcode = ?", (barcode,))
+        exists = cursor.fetchone()[0] > 0
+        conn.close()
+        return exists
+
+    def save_entries(self):
+        """Save new barcode entries into the SQLite database."""
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        count = 0
+
+        for i in range(self.listbox.size()):
+            entry_text = self.listbox.get(i)
+            timestamp, barcode = entry_text.split(": ", 1)
+            try:
+                cursor.execute("INSERT INTO barcodes (timestamp, barcode) VALUES (?, ?)", (timestamp, barcode))
+                count += 1
+            except sqlite3.IntegrityError:
+                pass  # Ignore duplicate barcodes
+
+        conn.commit()
+        conn.close()
+
+        if count > 0:
+            self.status_label.config(text=f"Saved {count} new entries to database.")
+        else:
+            self.status_label.config(text="No new barcodes to save.")
+
+        self.listbox.delete(0, tk.END)  # Clear listbox after saving
+
+    def clear_list(self):
+        """Clear only the listbox, keeping database entries intact."""
+        self.listbox.delete(0, tk.END)
+        self.status_label.config(text="List cleared.")
+
+    def load_previous_entries(self):
+        """Load previous barcode entries from the database into the listbox."""
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT timestamp, barcode FROM barcodes ORDER BY id DESC LIMIT 10")
+        rows = cursor.fetchall()
+        conn.close()
+
+        for row in rows:
+            self.listbox.insert(tk.END, f"{row[0]}: {row[1]}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = BarcodeScannerApp(root)
+    root.mainloop()
+
