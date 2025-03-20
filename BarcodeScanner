@@ -1,0 +1,203 @@
+import tkinter as tk
+from tkinter import messagebox
+import sqlite3
+import datetime
+import bcrypt
+
+class LoginApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Touchscreen Login")
+        self.root.geometry("480x320")  # Designed for Raspberry Pi 7" touchscreen
+
+        tk.Label(root, text="Username", font=("Arial", 18)).pack(pady=10)
+        self.entry_username = tk.Entry(root, font=("Arial", 16))
+        self.entry_username.pack(pady=10, ipadx=10, ipady=5)
+
+        tk.Label(root, text="Password", font=("Arial", 18)).pack(pady=10)
+        self.entry_password = tk.Entry(root, show="*", font=("Arial", 16))
+        self.entry_password.pack(pady=10, ipadx=10, ipady=5)
+
+        tk.Button(root, text="Login", command=self.verify_login, font=("Arial", 16), height=2, width=10).pack(pady=10)
+        tk.Button(root, text="Register", command=self.register_user_window, font=("Arial", 16), height=2, width=10).pack(pady=10)
+
+    def verify_login(self):
+        username = self.entry_username.get()
+        password = self.entry_password.get()
+
+        conn = sqlite3.connect("users.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and bcrypt.checkpw(password.encode('utf-8'), result[0]):
+            messagebox.showinfo("Login Success", "Welcome!")
+            self.root.destroy()
+            launch_barcode_scanner()
+        else:
+            messagebox.showerror("Login Failed", "Invalid username or password.")
+
+    def register_user_window(self):
+        reg_window = tk.Toplevel(self.root)
+        reg_window.title("Register")
+        reg_window.geometry("480x320")
+
+        tk.Label(reg_window, text="New Username", font=("Arial", 18)).pack(pady=10)
+        entry_new_username = tk.Entry(reg_window, font=("Arial", 16))
+        entry_new_username.pack(pady=10, ipadx=10, ipady=5)
+
+        tk.Label(reg_window, text="New Password", font=("Arial", 18)).pack(pady=10)
+        entry_new_password = tk.Entry(reg_window, show="*", font=("Arial", 16))
+        entry_new_password.pack(pady=10, ipadx=10, ipady=5)
+
+        def register():
+            username = entry_new_username.get()
+            password = entry_new_password.get()
+
+            if not username or not password:
+                messagebox.showerror("Error", "Please fill in both fields.")
+                return
+
+            hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+            conn = sqlite3.connect("users.db")
+            cursor = conn.cursor()
+            try:
+                cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw))
+                conn.commit()
+                messagebox.showinfo("Success", "User registered successfully!")
+                reg_window.destroy()
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Error", "Username already exists.")
+            conn.close()
+
+        tk.Button(reg_window, text="Register", command=register, font=("Arial", 16), height=2, width=10).pack(pady=20)
+
+
+class BarcodeScannerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Touchscreen Barcode Scanner")
+        self.root.geometry("480x320")
+
+        self.create_database()
+
+        self.label = tk.Label(root, text="Scan Barcode:", font=("Arial", 18))
+        self.label.pack(pady=10)
+
+        self.entry = tk.Entry(root, font=("Arial", 16))
+        self.entry.pack(pady=5, ipadx=10, ipady=5)
+        self.entry.bind("<Return>", self.scan_barcode)
+        self.entry.focus()
+
+        self.listbox = tk.Listbox(root, font=("Arial", 14), height=6)
+        self.listbox.pack(pady=10, fill=tk.BOTH, expand=True)
+
+        self.button_frame = tk.Frame(root)
+        self.button_frame.pack(pady=5)
+
+        self.save_button = tk.Button(self.button_frame, text="Save", command=self.save_entries, font=("Arial", 16), height=2, width=8)
+        self.save_button.pack(side=tk.LEFT, padx=10)
+
+        self.clear_button = tk.Button(self.button_frame, text="Clear", command=self.clear_list, font=("Arial", 16), height=2, width=8)
+        self.clear_button.pack(side=tk.LEFT, padx=10)
+
+        self.status_label = tk.Label(root, text="", font=("Arial", 12), fg="green")
+        self.status_label.pack()
+
+        self.load_previous_entries()
+
+    def create_database(self):
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS barcodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                barcode TEXT NOT NULL UNIQUE
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def scan_barcode(self, event):
+        barcode = self.entry.get().strip()
+        if barcode:
+            if self.is_barcode_duplicate(barcode):
+                messagebox.showwarning("Duplicate Entry", "This barcode has already been scanned.")
+            else:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.listbox.insert(tk.END, f"{timestamp}: {barcode}")
+            self.entry.delete(0, tk.END)
+        else:
+            messagebox.showwarning("Input Error", "Please scan a valid barcode.")
+        self.entry.focus()
+
+    def is_barcode_duplicate(self, barcode):
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM barcodes WHERE barcode = ?", (barcode,))
+        exists = cursor.fetchone()[0] > 0
+        conn.close()
+        return exists
+
+    def save_entries(self):
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        count = 0
+
+        for i in range(self.listbox.size()):
+            entry_text = self.listbox.get(i)
+            timestamp, barcode = entry_text.split(": ", 1)
+            try:
+                cursor.execute("INSERT INTO barcodes (timestamp, barcode) VALUES (?, ?)", (timestamp, barcode))
+                count += 1
+            except sqlite3.IntegrityError:
+                pass
+
+        conn.commit()
+        conn.close()
+
+        if count > 0:
+            self.status_label.config(text=f"Saved {count} entries.")
+        else:
+            self.status_label.config(text="No new barcodes to save.")
+        self.listbox.delete(0, tk.END)
+
+    def clear_list(self):
+        self.listbox.delete(0, tk.END)
+        self.status_label.config(text="List cleared.")
+
+    def load_previous_entries(self):
+        conn = sqlite3.connect("barcodes.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT timestamp, barcode FROM barcodes ORDER BY id DESC LIMIT 10")
+        rows = cursor.fetchall()
+        conn.close()
+        for row in rows:
+            self.listbox.insert(tk.END, f"{row[0]}: {row[1]}")
+
+def launch_barcode_scanner():
+    root = tk.Tk()
+    app = BarcodeScannerApp(root)
+    root.mainloop()
+
+# Ensure user database exists
+def create_users_db():
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+if __name__ == "__main__":
+    create_users_db()
+    root = tk.Tk()
+    app = LoginApp(root)
+    root.mainloop()
