@@ -1,0 +1,71 @@
+import tkinter as tk
+from tkinter import ttk
+import sqlite3
+
+# Set up database
+conn = sqlite3.connect('survey_responses.db')
+cursor = conn.cursor()
+cursor.execute('''CREATE TABLE IF NOT EXISTS responses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    location TEXT,
+    operation TEXT,
+    feeling TEXT
+)''')
+conn.commit()
+
+def submit():
+    name = name_entry.get()
+    location = location_var.get()
+    operation = operation_var.get()
+    feeling = feeling_var.get()
+
+    cursor.execute('''INSERT INTO responses (name, location, operation, feeling) VALUES (?, ?, ?, ?)''',
+                   (name, location, operation, feeling))
+    conn.commit()
+
+    result_label.config(text="Responses saved! Thank you!")
+
+root = tk.Tk()
+root.title("Package Survey")
+root.geometry("600x600")
+
+# Question 1: Who are you?
+tk.Label(root, text="Who are you?", font=("Arial", 16)).pack(pady=10)
+name_entry = tk.Entry(root, font=("Arial", 14), width=30)
+name_entry.pack(pady=10)
+
+# Question 2: Where are you? (dropdown)
+tk.Label(root, text="Where are you?", font=("Arial", 16)).pack(pady=10)
+location_var = tk.StringVar()
+location_dropdown = ttk.Combobox(root, textvariable=location_var, font=("Arial", 14), state="readonly")
+location_dropdown['values'] = ["Warehouse A", "Warehouse B", "Dock 1", "Dock 2", "Office", "Transit"]
+location_dropdown.pack(pady=10)
+
+# Question 3: What operation are you trying to do? (dropdown)
+tk.Label(root, text="What operation are you trying to do?", font=("Arial", 16)).pack(pady=10)
+operation_var = tk.StringVar()
+operation_dropdown = ttk.Combobox(root, textvariable=operation_var, font=("Arial", 14), state="readonly")
+operation_dropdown['values'] = ["Find", "Receive", "Ship", "Move"]
+operation_dropdown.pack(pady=10)
+
+# Question 4: How do you feel about the package? (dropdown)
+tk.Label(root, text="How do you feel about the package?", font=("Arial", 16)).pack(pady=10)
+feeling_var = tk.StringVar()
+feeling_dropdown = ttk.Combobox(root, textvariable=feeling_var, font=("Arial", 14), state="readonly")
+feeling_dropdown['values'] = [
+    "Happy", "Worried", "Hurt", "Sad", "Angry", "Confused", "Relief",
+    "Satisfaction", "Surprise", "Nostalgic", "Interest", "Horror"
+]
+feeling_dropdown.pack(pady=10)
+
+# Submit button
+submit_btn = tk.Button(root, text="Submit", font=("Arial", 16), command=submit)
+submit_btn.pack(pady=30)
+
+result_label = tk.Label(root, text="", font=("Arial", 14), fg="green")
+result_label.pack(pady=20)
+
+root.mainloop()
+
+conn.close()
