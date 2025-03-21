@@ -1,0 +1,126 @@
+import tkinter as tk
+from tkinter import ttk
+import sqlite3
+
+# Set up database
+conn = sqlite3.connect('survey_responses.db')
+cursor = conn.cursor()
+cursor.execute('''CREATE TABLE IF NOT EXISTS responses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    location TEXT,
+    operation TEXT,
+    feeling TEXT
+)''')
+conn.commit()
+
+root = tk.Tk()
+root.title("Package Survey")
+root.geometry("480x320")  # Adjusted for 3.5 inch screen resolution
+
+responses = {"name": "", "location": "", "operation": "", "feeling": ""}
+
+frame = tk.Frame(root)
+frame.pack(expand=True, fill='both')
+
+def clear_frame():
+    for widget in frame.winfo_children():
+        widget.destroy()
+
+def start_questionnaire():
+    clear_frame()
+    tk.Label(frame, text="Who are you?", font=("Arial", 12)).pack(pady=5)
+    name_entry = tk.Entry(frame, font=("Arial", 12), width=20)
+    name_entry.pack(pady=5)
+
+    keyboard_frame = tk.Frame(frame)
+    keyboard_frame.pack(pady=5)
+
+    def insert_text(char):
+        name_entry.insert(tk.END, char)
+
+    def clear_text():
+        name_entry.delete(0, tk.END)
+
+    keys = [
+        ['Q','W','E','R','T','Y','U','I','O','P'],
+        ['A','S','D','F','G','H','J','K','L'],
+        ['Z','X','C','V','B','N','M'],
+        ['Space', 'Clear']
+    ]
+
+    for row in keys:
+        row_frame = tk.Frame(keyboard_frame)
+        row_frame.pack()
+        for key in row:
+            if key == 'Space':
+                btn = tk.Button(row_frame, text='Space', width=5, height=1, command=lambda k=' ': insert_text(k))
+            elif key == 'Clear':
+                btn = tk.Button(row_frame, text='Clear', width=5, height=1, command=clear_text)
+            else:
+                btn = tk.Button(row_frame, text=key, width=3, height=1, command=lambda k=key: insert_text(k))
+            btn.pack(side='left', padx=1, pady=1)
+
+    def submit_name():
+        responses["name"] = name_entry.get()
+        ask_location()
+
+    tk.Button(frame, text="Next", font=("Arial", 12), command=submit_name).pack(pady=10)
+
+def ask_location():
+    clear_frame()
+    tk.Label(frame, text="Where are you?", font=("Arial", 12)).pack(pady=5)
+    location_var = tk.StringVar()
+    location_dropdown = ttk.Combobox(frame, textvariable=location_var, font=("Arial", 10), state="readonly", width=18)
+    location_dropdown['values'] = ["Warehouse A", "Warehouse B", "Dock 1", "Dock 2", "Office", "Transit"]
+    location_dropdown.pack(pady=5)
+
+    def submit_location():
+        responses["location"] = location_var.get()
+        ask_operation()
+
+    tk.Button(frame, text="Next", font=("Arial", 12), command=submit_location).pack(pady=10)
+
+def ask_operation():
+    clear_frame()
+    tk.Label(frame, text="What operation?", font=("Arial", 12)).pack(pady=5)
+    operation_var = tk.StringVar()
+    operation_dropdown = ttk.Combobox(frame, textvariable=operation_var, font=("Arial", 10), state="readonly", width=18)
+    operation_dropdown['values'] = ["Find", "Receive", "Ship", "Move"]
+    operation_dropdown.pack(pady=5)
+
+    def submit_operation():
+        responses["operation"] = operation_var.get()
+        ask_feeling()
+
+    tk.Button(frame, text="Next", font=("Arial", 12), command=submit_operation).pack(pady=10)
+
+def ask_feeling():
+    clear_frame()
+    tk.Label(frame, text="How do you feel?", font=("Arial", 12)).pack(pady=5)
+    feeling_var = tk.StringVar()
+    feeling_dropdown = ttk.Combobox(frame, textvariable=feeling_var, font=("Arial", 10), state="readonly", width=18)
+    feeling_dropdown['values'] = [
+        "Happy", "Worried", "Hurt", "Sad", "Angry", "Confused", "Relief",
+        "Satisfaction", "Surprise", "Nostalgic", "Interest", "Horror"
+    ]
+    feeling_dropdown.pack(pady=5)
+
+    def submit_feeling():
+        responses["feeling"] = feeling_var.get()
+        save_to_db()
+
+    tk.Button(frame, text="Submit", font=("Arial", 12), command=submit_feeling).pack(pady=10)
+
+def save_to_db():
+    cursor.execute('''INSERT INTO responses (name, location, operation, feeling) VALUES (?, ?, ?, ?)''',
+                   (responses["name"], responses["location"], responses["operation"], responses["feeling"]))
+    conn.commit()
+    clear_frame()
+    tk.Label(frame, text="Responses saved! Thank you!", font=("Arial", 12), fg="green").pack(pady=20)
+    tk.Button(frame, text="Start Over", font=("Arial", 12), command=start_questionnaire).pack(pady=10)
+
+start_questionnaire()
+root.mainloop()
+
+conn.close()
