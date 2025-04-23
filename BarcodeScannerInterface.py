@@ -1,305 +1,268 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
-import sqlite3
-import bcrypt
+import psycopg2
+import os
+from dotenv import load_dotenv
 
 responses = {"name": "", "location": "", "operation": "", "feeling": ""}
 
-class UsernameScreen:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Enter Username")
-        self.root.geometry("480x320")
+load_dotenv()
 
-        tk.Label(root, text="Username", font=("Arial", 20)).pack(pady=5)
-        self.entry_username = tk.Entry(root, font=("Arial", 18))
-        self.entry_username.pack(pady=5, ipadx=10, ipady=5)
-        self.entry_username.focus_set()
+# Test database connection immediately at startup
+try:
+    test_conn = psycopg2.connect(
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        sslmode="require"
+    )
+    test_conn.close()
+    print("✅ Successfully connected to Amazon RDS.")
+except Exception as e:
+    print("❌ Failed to connect to Amazon RDS:", e)
+    messagebox.showerror("Database Error", f"Could not connect to Amazon RDS.\n\n{e}")
+    exit(1)
 
-        self.build_compact_keyboard(root, self.entry_username)
+def get_connection():
+    return psycopg2.connect(
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        sslmode="require"
+    )
 
-        tk.Button(root, text="Next", command=self.go_to_password, font=("Arial", 14), height=2, width=10).pack(pady=5)
+def create_barcode_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS barcodes (
+            id SERIAL PRIMARY KEY,
+            code TEXT NOT NULL,
+            timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    conn.close()
 
-    def build_compact_keyboard(self, parent, entry):
-        keys = [
-            ['1','2','3','4','5','6','7','8','9','0'],
-            ['q','w','e','r','t','y','u','i','o','p'],
-            ['a','s','d','f','g','h','j','k','l'],
-            ['z','x','c','v','b','n','m','Space','Back','Clear']
-        ]
-        kb_frame = tk.Frame(parent)
-        kb_frame.pack(pady=5)
+def create_survey_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS responses (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            location TEXT,
+            operation TEXT,
+            feeling TEXT
+        );
+    """)
+    conn.commit()
+    conn.close()
 
-        for row in keys:
-            row_frame = tk.Frame(kb_frame)
-            row_frame.pack()
-            for key in row:
-                action = lambda x=key: self.press_key(entry, x)
-                b = tk.Button(row_frame, text=key, width=4, height=1, font=("Arial", 10), command=action)
-                b.pack(side=tk.LEFT, padx=1, pady=1)
+def create_battery_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS batteries (
+            id SERIAL PRIMARY KEY,
+            serial_num INTEGER NOT NULL,
+            part_num INTEGER NOT NULL,
+            item_type TEXT,
+            user_id TEXT,
+            location TEXT,
+            description TEXT,
+            madlibs TEXT,
+            image TEXT
+        );
+    """)
+    conn.commit()
+    conn.close()
 
-    def press_key(self, entry, key):
-        if key == 'Back':
-            current = entry.get()
-            entry.delete(len(current)-1, tk.END)
-        elif key == 'Clear':
-            entry.delete(0, tk.END)
-        elif key == 'Space':
-            entry.insert(tk.END, ' ')
-        else:
-            entry.insert(tk.END, key)
-
-    def go_to_password(self):
-        username = self.entry_username.get().strip()
-        if username:
-            self.root.destroy()
-            root_pw = tk.Tk()
-            PasswordScreen(root_pw, username)
-            root_pw.mainloop()
-        else:
-            messagebox.showerror("Input Error", "Please enter a username.")
-
-
-class PasswordScreen:
-    def __init__(self, root, username):
-        self.root = root
-        self.username = username
-        self.root.title("Enter Password")
-        self.root.geometry("480x320")
-
-        tk.Label(root, text=f"User: {username}", font=("Arial", 14)).pack(pady=3)
-        tk.Label(root, text="Password", font=("Arial", 20)).pack(pady=5)
-
-        self.entry_password = tk.Entry(root, show="*", font=("Arial", 18))
-        self.entry_password.pack(pady=5, ipadx=10, ipady=5)
-        self.entry_password.focus_set()
-
-        self.build_compact_keyboard(root, self.entry_password)
-
-        button_frame = tk.Frame(root)
-        button_frame.pack(pady=5)
-
-        tk.Button(button_frame, text="Back", command=self.back_to_username, font=("Arial", 14), height=2, width=8).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Login", command=self.verify_login, font=("Arial", 14), height=2, width=8).pack(side=tk.LEFT, padx=5)
-
-    def build_compact_keyboard(self, parent, entry):
-        keys = [
-            ['1','2','3','4','5','6','7','8','9','0'],
-            ['q','w','e','r','t','y','u','i','o','p'],
-            ['a','s','d','f','g','h','j','k','l'],
-            ['z','x','c','v','b','n','m','Space','Back','Clear']
-        ]
-        kb_frame = tk.Frame(parent)
-        kb_frame.pack(pady=5)
-
-        for row in keys:
-            row_frame = tk.Frame(kb_frame)
-            row_frame.pack()
-            for key in row:
-                action = lambda x=key: self.press_key(entry, x)
-                b = tk.Button(row_frame, text=key, width=4, height=1, font=("Arial", 10), command=action)
-                b.pack(side=tk.LEFT, padx=1, pady=1)
-
-    def press_key(self, entry, key):
-        if key == 'Back':
-            current = entry.get()
-            entry.delete(len(current)-1, tk.END)
-        elif key == 'Clear':
-            entry.delete(0, tk.END)
-        elif key == 'Space':
-            entry.insert(tk.END, ' ')
-        else:
-            entry.insert(tk.END, key)
-
-    def back_to_username(self):
-        self.root.destroy()
-        root_username = tk.Tk()
-        UsernameScreen(root_username)
-        root_username.mainloop()
-
-    def verify_login(self):
-        password = self.entry_password.get()
-        conn = sqlite3.connect("users.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT password FROM users WHERE username = ?", (self.username,))
-        result = cursor.fetchone()
-        conn.close()
-
-        if result and bcrypt.checkpw(password.encode('utf-8'), result[0]):
-            self.root.destroy()
-            launch_barcode_scanner()
-        else:
-            messagebox.showerror("Login Failed", "Incorrect password.")
-
+def add_battery(serial_num, part_num, item_type, user_id, location, description, madlibs, image):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO batteries (serial_num, part_num, item_type, user_id, location, description, madlibs, image)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+    """, (serial_num, part_num, item_type, user_id, location, description, madlibs, image))
+    conn.commit()
+    conn.close()
 
 class BarcodeScannerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Barcode Scanner")
+        self.root.title("Battery Barcode Scanner")
         self.root.geometry("480x320")
 
-        tk.Label(root, text="Scan or Enter Barcode:", font=("Arial", 16)).pack(pady=5)
+        self.serial_num = None
+        self.part_num = None
+        self.expecting = "serial"
 
-        self.entry = tk.Entry(root, font=("Arial", 16))
+        self.barcode_frame = tk.Frame(root)
+        self.desc_frame = tk.Frame(root)
+        self.madlib_frame = tk.Frame(root)
+
+        self.label = tk.Label(self.barcode_frame, text="Scan Serial Number", font=("Arial", 14))
+        self.label.pack(pady=5)
+
+        self.entry = tk.Entry(self.barcode_frame, font=("Arial", 14))
         self.entry.pack(pady=5, ipadx=10, ipady=5)
         self.entry.bind("<Return>", self.scan_barcode)
         self.entry.focus()
 
-        self.listbox = tk.Listbox(root, font=("Arial", 14), height=6)
-        self.listbox.pack(pady=10, fill=tk.BOTH, expand=True)
+        self.enter_button = tk.Button(self.barcode_frame, text="Enter", font=("Arial", 12), command=self.scan_barcode)
+        self.enter_button.pack(pady=5)
 
-        button_frame = tk.Frame(root)
-        button_frame.pack(pady=5)
+        self.battery_type_var = tk.StringVar()
+        self.battery_dropdown = ttk.Combobox(self.barcode_frame, textvariable=self.battery_type_var, state="readonly")
+        self.battery_dropdown['values'] = ["Lead-Acid", "Lithium-Ion", "Ni-Mh"]
+        self.battery_dropdown.current(0)
+        self.battery_dropdown.pack(pady=2)
 
-        tk.Button(button_frame, text="Clear List", command=self.clear_list, font=("Arial", 14), height=1, width=10).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Save & Continue", command=self.save_and_continue, font=("Arial", 14), height=1, width=14).pack(side=tk.LEFT, padx=5)
+        self.location_var = tk.StringVar()
+        self.location_dropdown = ttk.Combobox(self.barcode_frame, textvariable=self.location_var, state="readonly")
+        self.location_dropdown['values'] = ["Warehouse A", "Warehouse B", "Warehouse C", "Warehouse D"]
+        self.location_dropdown.current(0)
+        self.location_dropdown.pack(pady=2)
+
+        self.status = tk.Label(self.barcode_frame, text="Waiting for input...", font=("Arial", 12))
+        self.status.pack(pady=5)
+
+        self.barcode_frame.pack(fill="both", expand=True)
+
+        self.desc_label = tk.Label(self.desc_frame, text="Enter Description", font=("Arial", 12))
+        self.desc_label.pack(pady=3)
+
+        self.description_entry = tk.Entry(self.desc_frame, font=("Arial", 12), width=32)
+        self.description_entry.pack(pady=3)
+
+        self.keyboard_frame = tk.Frame(self.desc_frame)
+        self.keyboard_frame.pack()
+
+        keys = ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm', ' ']
+        for row in keys:
+            row_frame = tk.Frame(self.keyboard_frame)
+            row_frame.pack()
+            for char in row:
+                label = 'Space' if char == ' ' else char
+                btn = tk.Button(row_frame, text=label, width=6 if char == ' ' else 3, font=("Arial", 10),
+                                command=lambda c=char: self.description_entry.insert(tk.END, c))
+                btn.pack(side=tk.LEFT, padx=1, pady=1)
+
+        back_btn = tk.Button(self.keyboard_frame, text="Backspace", width=10, font=("Arial", 10), command=self.backspace_description)
+        back_btn.pack(pady=3)
+
+        self.next_button = tk.Button(self.desc_frame, text="Next", font=("Arial", 12), command=self.show_madlib_screen)
+        self.next_button.pack(pady=5)
+
+        self.madlib_label = tk.Label(self.madlib_frame, text="This battery is", font=("Arial", 12))
+        self.madlib_label.pack(pady=3)
+
+        madlib_dropdown_frame = tk.Frame(self.madlib_frame)
+        madlib_dropdown_frame.pack()
+
+        self.adj1 = tk.StringVar()
+        self.adj2 = tk.StringVar()
+
+        self.adj1_dropdown = ttk.Combobox(madlib_dropdown_frame, textvariable=self.adj1, state="readonly", width=10)
+        self.adj1_dropdown['values'] = ["happy", "sad", "melancholy", "angry"]
+        self.adj1_dropdown.current(0)
+        self.adj1_dropdown.pack(side=tk.LEFT, padx=2)
+
+        tk.Label(madlib_dropdown_frame, text="and").pack(side=tk.LEFT)
+
+        self.adj2_dropdown = ttk.Combobox(madlib_dropdown_frame, textvariable=self.adj2, state="readonly", width=10)
+        self.adj2_dropdown['values'] = ["safe", "hot", "old", "new"]
+        self.adj2_dropdown.current(0)
+        self.adj2_dropdown.pack(side=tk.LEFT, padx=2)
+
+        self.submit_button = tk.Button(self.madlib_frame, text="Submit", font=("Arial", 12), command=self.save_battery)
+        self.submit_button.pack(pady=5)
 
     def scan_barcode(self, event=None):
-        barcode = self.entry.get().strip()
-        if barcode:
-            self.listbox.insert(tk.END, barcode)
-            self.entry.delete(0, tk.END)
-            self.entry.focus()
-
-    def clear_list(self):
-        self.listbox.delete(0, tk.END)
-
-    def save_and_continue(self):
-        if self.listbox.size() == 0:
-            messagebox.showinfo("Info", "No barcodes to save.")
+        code = self.entry.get().strip()
+        self.entry.delete(0, tk.END)
+        if not code.isdigit():
+            self.status.config(text="❌ Invalid barcode: must be numeric")
             return
-        with open("scanned_barcodes.txt", "a") as f:
-            for i in range(self.listbox.size()):
-                f.write(self.listbox.get(i) + "\n")
-        self.root.destroy()
-        launch_survey()
 
+        if self.expecting == "serial":
+            self.serial_num = int(code)
+            self.status.config(text=f"✅ Serial number scanned: {self.serial_num}")
+            self.label.config(text="Scan Part Number")
+            self.expecting = "part"
+        elif self.expecting == "part":
+            self.part_num = int(code)
+            self.status.config(text=f"✅ Part number scanned: {self.part_num}")
+            self.barcode_frame.pack_forget()
+            self.desc_frame.pack(fill="both", expand=True)
+
+    def show_madlib_screen(self):
+        self.desc_frame.pack_forget()
+        self.madlib_frame.pack(fill="both", expand=True)
+
+    def backspace_description(self):
+        current_text = self.description_entry.get()
+        self.description_entry.delete(0, tk.END)
+        self.description_entry.insert(0, current_text[:-1])
+
+    def save_battery(self):
+        item_type = self.battery_type_var.get()
+        location = self.location_var.get()
+        description = self.description_entry.get().strip()
+        madlibs = f"This battery is {self.adj1.get()} and {self.adj2.get()}"
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO barcodes (code) VALUES (%s)", (str(self.serial_num),))
+            cursor.execute("INSERT INTO barcodes (code) VALUES (%s)", (str(self.part_num),))
+            cursor.execute("""
+                INSERT INTO batteries (serial_num, part_num, item_type, user_id, location, description, madlibs, image)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                self.serial_num,
+                self.part_num,
+                item_type,
+                "scanner",
+                location,
+                description,
+                madlibs,
+                ""
+            ))
+            conn.commit()
+            conn.close()
+            messagebox.showinfo("Saved", f"Battery saved successfully.")
+        except Exception as e:
+            messagebox.showerror("Database Error", str(e))
+        self.reset()
+
+    def reset(self):
+        self.serial_num = None
+        self.part_num = None
+        self.expecting = "serial"
+        self.label.config(text="Scan Serial Number")
+        self.status.config(text="Waiting for input...")
+        self.entry.delete(0, tk.END)
+        self.description_entry.delete(0, tk.END)
+        self.madlib_frame.pack_forget()
+        self.desc_frame.pack_forget()
+        self.barcode_frame.pack(fill="both", expand=True)
+        self.entry.focus()
 
 def launch_barcode_scanner():
     root = tk.Tk()
     BarcodeScannerApp(root)
     root.mainloop()
 
-
-def launch_survey():
-    import sqlite3
-
-    conn = sqlite3.connect('survey_responses.db')
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS responses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, location TEXT, operation TEXT, feeling TEXT)''')
-    conn.commit()
-
-    root = tk.Tk()
-    root.title("Package Survey")
-    root.geometry("480x320")
-
-    frame = tk.Frame(root)
-    frame.pack(expand=True, fill='both')
-
-    def clear_frame():
-        for widget in frame.winfo_children():
-            widget.destroy()
-
-    def start_questionnaire():
-        clear_frame()
-        tk.Label(frame, text="Who are you?", font=("Arial", 12)).pack(pady=5)
-        name_entry = tk.Entry(frame, font=("Arial", 12), width=20)
-        name_entry.pack(pady=5)
-
-        keyboard_frame = tk.Frame(frame)
-        keyboard_frame.pack(pady=5)
-
-        def insert_text(char):
-            name_entry.insert(tk.END, char)
-
-        def clear_text():
-            name_entry.delete(0, tk.END)
-
-        keys = [['Q','W','E','R','T','Y','U','I','O','P'], ['A','S','D','F','G','H','J','K','L'], ['Z','X','C','V','B','N','M'], ['Space', 'Clear']]
-
-        for row in keys:
-            row_frame = tk.Frame(keyboard_frame)
-            row_frame.pack()
-            for key in row:
-                if key == 'Space':
-                    btn = tk.Button(row_frame, text='Space', width=5, height=1, command=lambda k=' ': insert_text(k))
-                elif key == 'Clear':
-                    btn = tk.Button(row_frame, text='Clear', width=5, height=1, command=clear_text)
-                else:
-                    btn = tk.Button(row_frame, text=key, width=3, height=1, command=lambda k=key: insert_text(k))
-                btn.pack(side='left', padx=1, pady=1)
-
-        def submit_name():
-            responses["name"] = name_entry.get()
-            ask_location()
-
-        tk.Button(frame, text="Next", font=("Arial", 12), command=submit_name).pack(pady=10)
-
-    def ask_location():
-        clear_frame()
-        tk.Label(frame, text="Where are you?", font=("Arial", 12)).pack(pady=5)
-        location_var = tk.StringVar()
-        location_dropdown = ttk.Combobox(frame, textvariable=location_var, font=("Arial", 10), state="readonly", width=18)
-        location_dropdown['values'] = ["Warehouse A", "Warehouse B", "Dock 1", "Dock 2", "Office", "Transit"]
-        location_dropdown.pack(pady=5)
-
-        def submit_location():
-            responses["location"] = location_var.get()
-            ask_operation()
-
-        tk.Button(frame, text="Next", font=("Arial", 12), command=submit_location).pack(pady=10)
-
-    def ask_operation():
-        clear_frame()
-        tk.Label(frame, text="What operation?", font=("Arial", 12)).pack(pady=5)
-        operation_var = tk.StringVar()
-        operation_dropdown = ttk.Combobox(frame, textvariable=operation_var, font=("Arial", 10), state="readonly", width=18)
-        operation_dropdown['values'] = ["Find", "Receive", "Ship", "Move"]
-        operation_dropdown.pack(pady=5)
-
-        def submit_operation():
-            responses["operation"] = operation_var.get()
-            ask_feeling()
-
-        tk.Button(frame, text="Next", font=("Arial", 12), command=submit_operation).pack(pady=10)
-
-    def ask_feeling():
-        clear_frame()
-        tk.Label(frame, text="How do you feel?", font=("Arial", 12)).pack(pady=5)
-        feeling_var = tk.StringVar()
-        feeling_dropdown = ttk.Combobox(frame, textvariable=feeling_var, font=("Arial", 10), state="readonly", width=18)
-        feeling_dropdown['values'] = ["Happy", "Worried", "Hurt", "Sad", "Angry", "Confused", "Relief", "Satisfaction", "Surprise", "Nostalgic", "Interest", "Horror"]
-        feeling_dropdown.pack(pady=5)
-
-        def submit_feeling():
-            responses["feeling"] = feeling_var.get()
-            cursor.execute('''INSERT INTO responses (name, location, operation, feeling) VALUES (?, ?, ?, ?)''', (responses["name"], responses["location"], responses["operation"], responses["feeling"]))
-            conn.commit()
-            clear_frame()
-            tk.Label(frame, text="Responses saved! Thank you!", font=("Arial", 12), fg="green").pack(pady=20)
-            tk.Button(frame, text="Return to Login", font=("Arial", 12), command=lambda: [root.destroy(), main()]).pack(pady=10)
-
-        tk.Button(frame, text="Submit", font=("Arial", 12), command=submit_feeling).pack(pady=10)
-
-    start_questionnaire()
-    root.mainloop()
-    conn.close()
-
-
-def create_users_db():
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL)""")
-    conn.commit()
-    conn.close()
-
-
 def main():
-    create_users_db()
-    root = tk.Tk()
-    UsernameScreen(root)
-    root.mainloop()
-
+    create_barcode_db()
+    create_survey_db()
+    create_battery_db()
+    launch_barcode_scanner()
 
 if __name__ == "__main__":
     main()
